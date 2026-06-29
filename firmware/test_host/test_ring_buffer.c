@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 static int g_count, g_fail;
 #define CHECK(cond) do { g_count++; if(!(cond)){ g_fail++; \
@@ -75,12 +76,64 @@ static void test_order_preserved(void) {
     rb_destroy(rb);
 }
 
+static void test_newest_ts(void) {
+    ring_buffer_t *rb = rb_create(100000, 600000);
+    CHECK(rb_newest_ts(rb, -1) == -1);          // empty -> fallback
+    uint8_t a[10] = {0};
+    rb_push(rb, a, 10, 1000);
+    rb_push(rb, a, 10, 4000);
+    CHECK(rb_newest_ts(rb, -1) == 4000);        // tail timestamp
+    rb_destroy(rb);
+}
+
+static void test_copy_next_streams_in_order(void) {
+    ring_buffer_t *rb = rb_create(100000, 600000);
+    uint8_t a[3] = {0xAA, 0xBB, 0xCC};
+    uint8_t b[2] = {0x11, 0x22};
+    rb_push(rb, a, 3, 1000);
+    rb_push(rb, b, 2, 2000);
+    int64_t end = rb_newest_ts(rb, 0);          // 2000
+    uint8_t out[8]; size_t olen = 0; int64_t ots = 0;
+    int64_t after = INT64_MIN;
+    CHECK(rb_copy_next(rb, after, end, out, sizeof(out), &olen, &ots));
+    CHECK(olen == 3); CHECK(ots == 1000);
+    CHECK(out[0] == 0xAA && out[1] == 0xBB && out[2] == 0xCC);
+    after = ots;
+    CHECK(rb_copy_next(rb, after, end, out, sizeof(out), &olen, &ots));
+    CHECK(olen == 2); CHECK(ots == 2000);
+    CHECK(out[0] == 0x11 && out[1] == 0x22);
+    after = ots;
+    CHECK(!rb_copy_next(rb, after, end, out, sizeof(out), &olen, &ots));  // drained
+    rb_destroy(rb);
+}
+
+static void test_copy_next_respects_upto_and_capacity(void) {
+    ring_buffer_t *rb = rb_create(100000, 600000);
+    uint8_t a[5] = {0};
+    rb_push(rb, a, 5, 1000);
+    rb_push(rb, a, 5, 2000);
+    rb_push(rb, a, 5, 3000);
+    uint8_t out[8]; size_t olen = 0; int64_t ots = 0;
+    int64_t after = INT64_MIN;
+    CHECK(rb_copy_next(rb, after, 2000, out, sizeof(out), &olen, &ots)); after = ots;  // 1000
+    CHECK(rb_copy_next(rb, after, 2000, out, sizeof(out), &olen, &ots)); after = ots;  // 2000
+    CHECK(ots == 2000);
+    CHECK(!rb_copy_next(rb, after, 2000, out, sizeof(out), &olen, &ots));  // 3000 > upto
+    // capacity too small: every frame (len 5) > cap 2 -> all skipped, none returned
+    uint8_t small[2];
+    CHECK(!rb_copy_next(rb, INT64_MIN, 3000, small, sizeof(small), &olen, &ots));
+    rb_destroy(rb);
+}
+
 int main(void) {
     test_push_and_stats();
     test_reject_bad_input();
     test_byte_eviction_drops_oldest();
     test_time_window_eviction();
     test_order_preserved();
+    test_newest_ts();
+    test_copy_next_streams_in_order();
+    test_copy_next_respects_upto_and_capacity();
     printf("%d checks, %d failures\n", g_count, g_fail);
     return g_fail ? 1 : 0;
 }

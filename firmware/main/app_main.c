@@ -24,6 +24,7 @@ void app_main(void)
 
     static ring_buffer_t *rb;
     rb = rb_create(RB_MAX_BYTES, RB_WINDOW_MS);
+    if (!rb) ESP_LOGE(TAG, "ring buffer alloc failed; recording disabled");
 
     if (wearcam_cam_init() == ESP_OK) {
         cam_start_capture(rb);

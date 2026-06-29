@@ -92,8 +92,8 @@ void cam_get_settings(int *fps, int *quality, int *width, int *height)
     sensor_t *s = esp_camera_sensor_get();
     if (fps) *fps = s_fps;
     if (quality) *quality = s_quality;
-    if (s && width)  *width  = resolution[s->status.framesize].width;
-    if (s && height) *height = resolution[s->status.framesize].height;
+    if (width)  *width  = s ? resolution[s->status.framesize].width  : 0;
+    if (height) *height = s ? resolution[s->status.framesize].height : 0;
 }
 
 static void framehub_publish(const uint8_t *buf, size_t len)

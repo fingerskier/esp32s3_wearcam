@@ -8,6 +8,9 @@
 #include "host/util/util.h"
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/semphr.h"
 #include <string.h>
 
 static const char *TAG = "ble";
@@ -17,11 +20,15 @@ static uint16_t s_stat_attr;
 
 static char s_ssid[33];
 static char s_pass[65];
+static SemaphoreHandle_t s_apply_sem;   // signals the worker to apply creds
 
-// 128-bit base: xxxx fe4N -cc7a-482a-984a-7f2ed5b3e58f
+// 128-bit base: 0000fe4N-cc7a-482a-984a-7f2ed5b3e58f
+// BLE_UUID128_INIT takes the 16 bytes least-significant-byte first (NimBLE
+// stores .value little-endian = reverse of the canonical string), so the low
+// byte b2 (0x40..0x45) must come before the high byte b3 (0xfe).
 #define DECL_UUID(name, b2, b3) \
   static const ble_uuid128_t name = BLE_UUID128_INIT( \
-    0x8f,0xe5,0xb3,0xd5,0x2e,0x7f,0x4a,0x98,0x2a,0x48,0x7a,0xcc, b3, b2, 0x00,0x00)
+    0x8f,0xe5,0xb3,0xd5,0x2e,0x7f,0x4a,0x98,0x2a,0x48,0x7a,0xcc, b2, b3, 0x00,0x00)
 DECL_UUID(UUID_SVC,   0x40, 0xfe);
 DECL_UUID(UUID_SSID,  0x41, 0xfe);
 DECL_UUID(UUID_PASS,  0x42, 0xfe);
@@ -39,6 +46,7 @@ static void notify_status(void)
     int n = snprintf(msg, sizeof(msg), "%s ip=%s",
                      wifi_is_connected() ? "connected" : "setup", ip);
     struct os_mbuf *om = ble_hs_mbuf_from_flat(msg, n);
+    if (!om) return;
     ble_gatts_notify_custom(s_conn, s_stat_attr, om);
 }
 
@@ -55,9 +63,11 @@ static int chr_access(uint16_t ch, uint16_t attr, struct ble_gatt_access_ctxt *c
         } else if (ble_uuid_cmp(u, &UUID_PASS.u) == 0) {
             strlcpy(s_pass, buf, sizeof(s_pass));
         } else if (ble_uuid_cmp(u, &UUID_APPLY.u) == 0) {
-            ESP_LOGI(TAG, "apply creds ssid='%s'", s_ssid);
-            wifi_set_credentials(s_ssid, s_pass);
-            notify_status();
+            ESP_LOGI(TAG, "apply requested ssid='%s'", s_ssid);
+            // Defer the Wi-Fi mode switch to a worker task: running it here
+            // would block the NimBLE host task, delay the ATT response, and
+            // could abort from inside the GATT callback on a transient error.
+            if (s_apply_sem) xSemaphoreGive(s_apply_sem);
         } else if (ble_uuid_cmp(u, &UUID_CMD.u) == 0) {
             ESP_LOGI(TAG, "cmd: %s", buf);   // start/stop/snapshot hooks
         }
@@ -132,8 +142,27 @@ static void on_sync(void)
 
 static void host_task(void *param) { nimble_port_run(); nimble_port_freertos_deinit(); }
 
+// Applies WiFi credentials off the NimBLE host task (see APPLY handler).
+static void wifi_apply_worker(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        xSemaphoreTake(s_apply_sem, portMAX_DELAY);
+        if (!wifi_set_credentials(s_ssid, s_pass)) {
+            ESP_LOGW(TAG, "wifi_set_credentials failed");
+        }
+        notify_status();   // report setup/connecting state promptly
+    }
+}
+
+// Fired from the WiFi event task when the STA gets an IP: push it to the app.
+static void on_got_ip(void) { notify_status(); }
+
 void ble_prov_start(void)
 {
+    s_apply_sem = xSemaphoreCreateBinary();
+    xTaskCreate(wifi_apply_worker, "wifi_apply", 4096, NULL, 5, NULL);
+    wifi_set_ip_cb(on_got_ip);
     nimble_port_init();
     ble_hs_cfg.sync_cb = on_sync;
     ble_svc_gap_init();

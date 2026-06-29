@@ -19,6 +19,7 @@ static EventGroupHandle_t s_eg;
 static int s_retry;
 static bool s_provisioning;
 static char s_ip[16] = "0.0.0.0";
+static wifi_ip_cb_t s_ip_cb;
 
 static bool load_creds(char *ssid, size_t sn, char *pass, size_t pn)
 {
@@ -51,19 +52,22 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         s_retry = 0;
         xEventGroupSetBits(s_eg, CONNECTED_BIT);
         ESP_LOGI(TAG, "STA got IP %s", s_ip);
+        if (s_ip_cb) s_ip_cb();
     }
 }
 
-static void start_sta(const char *ssid, const char *pass)
+static esp_err_t start_sta(const char *ssid, const char *pass)
 {
     s_provisioning = false;
     wifi_config_t wc = {0};
     strlcpy((char *)wc.sta.ssid, ssid, sizeof(wc.sta.ssid));
     strlcpy((char *)wc.sta.password, pass, sizeof(wc.sta.password));
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wc));
-    ESP_ERROR_CHECK(esp_wifi_start());
+    esp_err_t err;
+    if ((err = esp_wifi_set_mode(WIFI_MODE_STA)) != ESP_OK) return err;
+    if ((err = esp_wifi_set_config(WIFI_IF_STA, &wc)) != ESP_OK) return err;
+    if ((err = esp_wifi_start()) != ESP_OK) return err;
     ESP_LOGI(TAG, "STA connecting to '%s'", ssid);
+    return ESP_OK;
 }
 
 static void start_ap(void)
@@ -96,7 +100,7 @@ void wifi_start(void)
 
     char ssid[33] = {0}, pass[65] = {0};
     if (load_creds(ssid, sizeof(ssid), pass, sizeof(pass))) {
-        start_sta(ssid, pass);
+        if (start_sta(ssid, pass) != ESP_OK) ESP_LOGE(TAG, "STA start failed at boot");
     } else {
         start_ap();
     }
@@ -113,16 +117,21 @@ bool wifi_set_credentials(const char *ssid, const char *pass)
     nvs_close(h);
     if (err != ESP_OK) return false;
 
-    // restart wifi as STA with new creds
+    // restart wifi as STA with new creds. Called from a worker task (not the
+    // BLE host callback); errors are returned, never aborted.
     esp_wifi_stop();
     s_retry = 0;
-    start_sta(ssid, pass);
+    if (start_sta(ssid, pass) != ESP_OK) {
+        ESP_LOGE(TAG, "STA restart failed applying new creds");
+        return false;
+    }
     return true;
 }
 
 bool wifi_is_connected(void) { return (xEventGroupGetBits(s_eg) & CONNECTED_BIT) != 0; }
 bool wifi_is_provisioning(void) { return s_provisioning; }
 void wifi_get_ip(char *out, size_t n) { strlcpy(out, s_ip, n); }
+void wifi_set_ip_cb(wifi_ip_cb_t cb) { s_ip_cb = cb; }
 
 int wifi_get_rssi(void)
 {

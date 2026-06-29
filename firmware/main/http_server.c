@@ -9,6 +9,7 @@
 #include "freertos/task.h"
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 static const char *TAG = "http";
 static ring_buffer_t *s_rb;
@@ -24,6 +25,9 @@ extern const uint8_t style_css_end[]     asm("_binary_style_css_end");
 #define PART_BOUNDARY "wearcamframe"
 static const char *STREAM_CT = "multipart/x-mixed-replace;boundary=" PART_BOUNDARY;
 static const char *PART_HDR = "\r\n--" PART_BOUNDARY "\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n";
+
+#define STREAM_PORT 81                 // /stream runs on its own httpd instance
+#define CLIP_FRAME_CAP (256 * 1024)    // max single JPEG copied per clip frame
 
 static esp_err_t send_static(httpd_req_t *r, const char *ct, const uint8_t *s, const uint8_t *e)
 {
@@ -65,24 +69,30 @@ static esp_err_t h_stream(httpd_req_t *r)
         int fps; cam_get_settings(&fps, NULL, NULL, NULL);
         vTaskDelay(pdMS_TO_TICKS(1000 / (fps > 0 ? fps : 20)));
     }
+    httpd_resp_send_chunk(r, NULL, 0);   // terminate the multipart stream
     return ESP_OK;
-}
-
-static bool clip_cb(const uint8_t *buf, size_t len, int64_t ts, void *ctx)
-{
-    httpd_req_t *r = (httpd_req_t *)ctx;
-    char hdr[80];
-    int n = snprintf(hdr, sizeof(hdr), PART_HDR, (unsigned)len);
-    if (httpd_resp_send_chunk(r, hdr, n) != ESP_OK) return false;
-    if (httpd_resp_send_chunk(r, (const char *)buf, len) != ESP_OK) return false;
-    (void)ts;
-    return true;
 }
 
 static esp_err_t h_clip(httpd_req_t *r)
 {
     httpd_resp_set_type(r, STREAM_CT);
-    rb_foreach(s_rb, clip_cb, r);
+    uint8_t *tmp = malloc(CLIP_FRAME_CAP);
+    if (!tmp) { httpd_resp_send_500(r); return ESP_FAIL; }
+    // Snapshot the upper time bound so a slow client can't stream forever as
+    // new frames keep arriving. rb_copy_next copies each frame out under the
+    // ring lock; we send it with the lock released, so capture/rb_push never
+    // stalls for the duration of the download.
+    int64_t end_ts = rb_newest_ts(s_rb, INT64_MIN);
+    int64_t after = INT64_MIN;
+    size_t flen = 0; int64_t fts = 0;
+    char hdr[80];
+    while (rb_copy_next(s_rb, after, end_ts, tmp, CLIP_FRAME_CAP, &flen, &fts)) {
+        after = fts;
+        int n = snprintf(hdr, sizeof(hdr), PART_HDR, (unsigned)flen);
+        if (httpd_resp_send_chunk(r, hdr, n) != ESP_OK) break;
+        if (httpd_resp_send_chunk(r, (const char *)tmp, flen) != ESP_OK) break;
+    }
+    free(tmp);
     httpd_resp_send_chunk(r, NULL, 0);   // end
     return ESP_OK;
 }
@@ -188,13 +198,29 @@ void http_start(ring_buffer_t *rb)
     reg(srv, "/app.js",    HTTP_GET,  h_appjs);
     reg(srv, "/style.css", HTTP_GET,  h_css);
     reg(srv, "/snapshot",  HTTP_GET,  h_snapshot);
-    reg(srv, "/stream",    HTTP_GET,  h_stream);
     reg(srv, "/clip",      HTTP_GET,  h_clip);
     reg(srv, "/api/status",HTTP_GET,  h_status);
     reg(srv, "/api/config",HTTP_POST, h_config);
     reg(srv, "/api/wifi",  HTTP_GET,  h_wifi_get);
     reg(srv, "/api/wifi",  HTTP_POST, h_wifi_post);
     ESP_LOGI(TAG, "http server up");
+
+    // esp_http_server services every handler in ONE task, and /stream never
+    // returns while a client is watching. Serve it from a second instance on a
+    // separate port so the long-lived stream can't block status polling,
+    // snapshots, or config changes on the main server.
+    httpd_config_t scfg = HTTPD_DEFAULT_CONFIG();
+    scfg.server_port = STREAM_PORT;
+    scfg.ctrl_port   = cfg.ctrl_port + 1;   // must differ from the main server
+    scfg.lru_purge_enable = true;
+    scfg.stack_size  = 8192;
+    httpd_handle_t stream_srv = NULL;
+    if (httpd_start(&stream_srv, &scfg) == ESP_OK) {
+        reg(stream_srv, "/stream", HTTP_GET, h_stream);
+        ESP_LOGI(TAG, "stream server up (port %d)", STREAM_PORT);
+    } else {
+        ESP_LOGE(TAG, "stream httpd start failed");
+    }
 }
 
 void wearcam_mdns_start(void)

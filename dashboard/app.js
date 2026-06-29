@@ -19,11 +19,14 @@ function initLive() {
   $('live-panel').hidden = false;
   let streaming = true;
   const img = $('stream');
-  img.src = '/stream';
+  // Stream is served by a second httpd instance on port 81 so it can't block
+  // the control endpoints (status poll, snapshot, config) on port 80.
+  const streamUrl = `${location.protocol}//${location.hostname}:81/stream`;
+  img.src = streamUrl;
 
   $('toggle').onclick = () => {
     streaming = !streaming;
-    img.src = streaming ? '/stream' : '';
+    img.src = streaming ? streamUrl : '';
     $('toggle').textContent = streaming ? 'Pause' : 'Resume';
   };
   $('snap').onclick = () => window.open('/snapshot', '_blank');

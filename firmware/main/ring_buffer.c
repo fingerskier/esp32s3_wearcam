@@ -111,3 +111,32 @@ void rb_foreach(ring_buffer_t *rb, rb_iter_cb cb, void *ctx)
     }
     RB_UNLOCK(rb);
 }
+
+int64_t rb_newest_ts(ring_buffer_t *rb, int64_t fallback)
+{
+    if (!rb) return fallback;
+    int64_t ts = fallback;
+    RB_LOCK(rb);
+    if (rb->tail) ts = rb->tail->ts_ms;
+    RB_UNLOCK(rb);
+    return ts;
+}
+
+bool rb_copy_next(ring_buffer_t *rb, int64_t after_ts, int64_t upto_ts,
+                  uint8_t *out, size_t out_cap, size_t *out_len, int64_t *out_ts)
+{
+    if (!rb || !out) return false;
+    bool found = false;
+    RB_LOCK(rb);
+    for (node_t *n = rb->head; n; n = n->next) {
+        if (n->ts_ms <= after_ts || n->ts_ms > upto_ts) continue;  // out of range
+        if (n->len > out_cap) continue;                            // won't fit; skip
+        memcpy(out, n->buf, n->len);
+        if (out_len) *out_len = n->len;
+        if (out_ts)  *out_ts  = n->ts_ms;
+        found = true;
+        break;   // first (oldest) matching frame
+    }
+    RB_UNLOCK(rb);
+    return found;
+}
