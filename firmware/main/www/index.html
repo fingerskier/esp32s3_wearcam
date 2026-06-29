@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WearCam</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header><h1>WearCam</h1><span id="conn" class="pill">…</span></header>
+
+  <section id="ble-panel" hidden>
+    <h2>Setup (Bluetooth)</h2>
+    <p class="hint">Hosted page — provision WiFi over Bluetooth, then open the device.</p>
+    <button id="ble-connect">Connect device</button>
+    <form id="wifi-form" hidden>
+      <input id="ssid" placeholder="WiFi SSID" autocomplete="off" />
+      <input id="pass" placeholder="WiFi password" type="password" />
+      <button type="submit">Send credentials</button>
+    </form>
+    <p id="ble-status"></p>
+    <a id="open-device" hidden>Open device dashboard →</a>
+  </section>
+
+  <section id="live-panel" hidden>
+    <div class="video-wrap"><img id="stream" alt="live stream" /></div>
+    <div class="controls">
+      <button id="snap">Snapshot</button>
+      <button id="clip">Download last 60s</button>
+      <button id="toggle">Pause</button>
+    </div>
+    <form id="config-form" class="grid">
+      <label>Resolution
+        <select id="res">
+          <option value="QVGA">QVGA 320×240</option>
+          <option value="VGA">VGA 640×480</option>
+          <option value="SVGA" selected>SVGA 800×600</option>
+          <option value="HD">HD 1280×720</option>
+        </select>
+      </label>
+      <label>FPS <input id="fps" type="number" min="1" max="30" value="20" /></label>
+      <label>Quality <input id="quality" type="number" min="4" max="63" value="12" /></label>
+      <button type="submit">Apply</button>
+    </form>
+    <pre id="status" class="status"></pre>
+  </section>
+
+  <script src="app.js"></script>
+</body>
+</html>

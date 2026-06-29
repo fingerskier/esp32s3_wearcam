@@ -5,6 +5,7 @@ idf_component_register(
         "camera.c"
         "wearcam_wifi.c"
         "ble_prov.c"
+        "http_server.c"
     INCLUDE_DIRS "."
     REQUIRES
         nvs_flash
@@ -16,6 +17,10 @@ idf_component_register(
         mdns
         bt
         esp32-camera
+    EMBED_FILES
+        "www/index.html"
+        "www/app.js"
+        "www/style.css"
 )
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE RB_USE_FREERTOS=1)

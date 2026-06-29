@@ -4,6 +4,7 @@
 #include "camera.h"
 #include "wearcam_wifi.h"
 #include "ble_prov.h"
+#include "http_server.h"
 
 static const char *TAG = "wearcam";
 
@@ -29,5 +30,9 @@ void app_main(void)
     } else {
         ESP_LOGE(TAG, "camera init failed; continuing without capture");
     }
+
+    http_start(rb);
+    wearcam_mdns_start();
+
     ESP_LOGI(TAG, "esp32s3_wearcam boot ok");
 }
