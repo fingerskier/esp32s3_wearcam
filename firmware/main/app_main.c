@@ -3,6 +3,7 @@
 #include "ring_buffer.h"
 #include "camera.h"
 #include "wearcam_wifi.h"
+#include "ble_prov.h"
 
 static const char *TAG = "wearcam";
 
@@ -18,6 +19,7 @@ void app_main(void)
     }
 
     wifi_start();
+    ble_prov_start();
 
     static ring_buffer_t *rb;
     rb = rb_create(RB_MAX_BYTES, RB_WINDOW_MS);

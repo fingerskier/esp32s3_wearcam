@@ -4,6 +4,7 @@ idf_component_register(
         "ring_buffer.c"
         "camera.c"
         "wearcam_wifi.c"
+        "ble_prov.c"
     INCLUDE_DIRS "."
     REQUIRES
         nvs_flash
