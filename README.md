@@ -8,4 +8,4 @@ Firmware for a wearable camera
 * auto-record rolling 1min input/video segments
 * wireless video broadcast
 * controllable via BT conx
-* host a web-dashboard here (GH Pages) for configuring the device
+* host a web-dashboard here (GH Pages) for configuring the device and previewing input/camera
