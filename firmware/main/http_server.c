@@ -4,6 +4,7 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "esp_heap_caps.h"
 #include "mdns.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -214,14 +215,28 @@ void http_start(ring_buffer_t *rb)
     scfg.server_port = STREAM_PORT;
     scfg.ctrl_port   = cfg.ctrl_port + 1;   // must differ from the main server
     scfg.lru_purge_enable = true;
-    scfg.stack_size  = 8192;
+    // Internal (DMA-capable) RAM is tight once the camera (non-PSRAM-DMA),
+    // WiFi and BLE are up -- the largest free internal block is ~6.6 KB, so an
+    // 8 KB task stack here fails xTaskCreate and httpd_start returns
+    // ESP_ERR_HTTPD_TASK (stream :81 never comes up). The stream handler keeps
+    // nothing large on its stack, so the ESP-IDF default 4 KB is plenty.
+    scfg.stack_size  = 4096;
     scfg.max_open_sockets = 3;   // +listen +ctrl = 5; 7+5 = 12 of 16, 4 spare
+    ESP_LOGI(TAG, "pre-stream heap: free=%u internal=%u largest_internal=%u",
+             (unsigned)esp_get_free_heap_size(),
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
     httpd_handle_t stream_srv = NULL;
-    if (httpd_start(&stream_srv, &scfg) == ESP_OK) {
+    esp_err_t srerr = httpd_start(&stream_srv, &scfg);
+    if (srerr == ESP_OK) {
         reg(stream_srv, "/stream", HTTP_GET, h_stream);
-        ESP_LOGI(TAG, "stream server up (port %d)", STREAM_PORT);
+        ESP_LOGI(TAG, "stream server up (port %d); post-stream internal: free=%u largest=%u",
+                 STREAM_PORT,
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
     } else {
-        ESP_LOGE(TAG, "stream httpd start failed");
+        ESP_LOGE(TAG, "stream httpd start failed: %s (port=%d ctrl=%d)",
+                 esp_err_to_name(srerr), STREAM_PORT, (int)scfg.ctrl_port);
     }
 }
 

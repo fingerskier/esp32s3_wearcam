@@ -8,10 +8,28 @@ CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_80M=y
 CONFIG_ESP32S3_DATA_CACHE_64KB=y
 CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=16384
+# Internal (DMA-capable) RAM is the scarce resource: camera DMA buffer + two
+# httpd task stacks + WiFi/BLE leave only ~2 KB internal free at boot, too
+# little for stable WiFi/BLE under streaming load. Push WiFi + LWIP buffers
+# into the 8 MB PSRAM so internal RAM stays available for what truly needs it.
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
 # Console over native USB-Serial-JTAG
 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
-# Camera
+# Camera (XIAO ESP32S3 Sense ships an OV3660; OV2640 kept for compatibility)
 CONFIG_OV2640_SUPPORT=y
+CONFIG_OV3660_SUPPORT=y
+# CONFIG_CAMERA_PSRAM_DMA is deliberately left OFF. Enabling it frees internal
+# RAM (DMA targets PSRAM instead of a ~16 KB internal buffer) but on this OV3660
+# it yields frames the driver can't validate -- "NO-EOI - JPEG end marker
+# missing" -> esp_camera_fb_get() times out -> camera unusable. We keep the
+# proven non-PSRAM-DMA path and instead size the stream httpd stack to fit the
+# tight internal RAM (see http_server.c).
+# FB-OVF fix: non-PSRAM-DMA mode bounds each JPEG to a fixed frame buffer
+# (default w*h/5 = 96000 B at SVGA), and busy OV3660 frames exceed it -> dropped
+# with continuous "cam_hal: FB-OVF". Give the JPEG buffer generous headroom so
+# real frames always fit (lives in PSRAM; matches CLIP_FRAME_CAP).
+CONFIG_CAMERA_JPEG_MODE_FRAME_SIZE_CUSTOM=y
+CONFIG_CAMERA_JPEG_MODE_FRAME_SIZE=262144
 # BLE NimBLE host
 CONFIG_BT_ENABLED=y
 CONFIG_BT_NIMBLE_ENABLED=y
