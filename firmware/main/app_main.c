@@ -1,7 +1,13 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
+#include "ring_buffer.h"
+#include "camera.h"
+#include "wearcam_wifi.h"
 
 static const char *TAG = "wearcam";
+
+#define RB_MAX_BYTES (5 * 1024 * 1024)
+#define RB_WINDOW_MS (60 * 1000)
 
 void app_main(void)
 {
@@ -9,6 +15,17 @@ void app_main(void)
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
         ESP_ERROR_CHECK(nvs_flash_init());
+    }
+
+    wifi_start();
+
+    static ring_buffer_t *rb;
+    rb = rb_create(RB_MAX_BYTES, RB_WINDOW_MS);
+
+    if (wearcam_cam_init() == ESP_OK) {
+        cam_start_capture(rb);
+    } else {
+        ESP_LOGE(TAG, "camera init failed; continuing without capture");
     }
     ESP_LOGI(TAG, "esp32s3_wearcam boot ok");
 }

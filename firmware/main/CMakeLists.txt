@@ -2,6 +2,8 @@ idf_component_register(
     SRCS
         "app_main.c"
         "ring_buffer.c"
+        "camera.c"
+        "wearcam_wifi.c"
     INCLUDE_DIRS "."
     REQUIRES
         nvs_flash
