@@ -39,6 +39,7 @@ ring_buffer_t *rb_create(size_t max_bytes, int64_t window_ms)
     rb->window_ms = window_ms;
 #ifdef RB_USE_FREERTOS
     rb->mtx = xSemaphoreCreateRecursiveMutex();
+    if (!rb->mtx) { free(rb); return NULL; }
 #endif
     return rb;
 }
