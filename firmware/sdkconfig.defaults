@@ -20,5 +20,10 @@ CONFIG_BT_NIMBLE_ROLE_BROADCASTER=y
 # HTTP server
 CONFIG_HTTPD_MAX_REQ_HDR_LEN=2048
 CONFIG_HTTPD_MAX_URI_LEN=512
+# Two httpd instances (main :80 + stream :81) share the LWIP socket pool;
+# each needs a listen + ctrl socket plus its clients. Raise the pool from the
+# default 10 so capped client sockets + TIME_WAIT churn can't starve the
+# control sockets and wedge the main server.
+CONFIG_LWIP_MAX_SOCKETS=16
 # Main task stack a bit larger
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=6144

@@ -25,13 +25,15 @@ Device: XIAO ESP32S3 Sense, firmware on branch `feat/wearcam-fw-dashboard`.
 > `idf.py -p <PORT> flash monitor` once the board enumerates as `303A`, then
 > tick the items below.
 
-- [ ] Boots: serial shows `camera ready`, `http server up`, `mdns: wearcam.local`.
+- [ ] Boots: serial shows `camera ready`, `http server up`, `stream server up (port 81)`, `mdns: wearcam.local`.
 - [ ] No creds → `provisioning AP 'wearcam-setup'` + BLE `advertising as WearCam`.
-- [ ] BLE provisioning sets creds → `STA got IP <ip>`; STATUS notifies `connected ip=<ip>`.
+- [ ] BLE scan shows service UUID `0000fe40-cc7a-482a-984a-7f2ed5b3e58f` (verify with nRF Connect — this is the C1 fix; pre-fix it advertised `000040fe-…`).
+- [ ] BLE provisioning sets creds → `STA got IP <ip>`; STATUS notifies `connected ip=<ip>` (pushed on GOT_IP, the I3 fix — dashboard "Open device" link appears).
 - [ ] `GET http://<ip>/api/status` → 200, `"cam":true`, `buf_frames>0`.
 - [ ] `GET http://<ip>/snapshot` → valid JPEG.
-- [ ] `GET http://<ip>/stream` → live MJPEG in browser.
-- [ ] `GET http://<ip>/clip` → downloads multipart MJPEG of buffered frames.
+- [ ] `GET http://<ip>:81/stream` → live MJPEG in browser (stream is on port **81** — the I1 fix).
+- [ ] While streaming, `/api/status` still responds (status poll not blocked by the stream — confirms I1).
+- [ ] `GET http://<ip>/clip` → downloads multipart MJPEG of buffered frames (capture keeps running during a slow download — confirms I2).
 - [ ] `POST http://<ip>/api/config {"res":"VGA","fps":15,"quality":15}` → stream resolution changes.
 - [ ] `http://wearcam.local/` resolves on the LAN.
 

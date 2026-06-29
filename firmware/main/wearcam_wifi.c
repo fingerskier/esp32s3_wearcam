@@ -70,7 +70,7 @@ static esp_err_t start_sta(const char *ssid, const char *pass)
     return ESP_OK;
 }
 
-static void start_ap(void)
+static esp_err_t start_ap(void)
 {
     s_provisioning = true;
     wifi_config_t wc = {0};
@@ -79,11 +79,13 @@ static void start_ap(void)
     wc.ap.channel = 1;
     wc.ap.max_connection = 2;
     wc.ap.authmode = WIFI_AUTH_OPEN;
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wc));
-    ESP_ERROR_CHECK(esp_wifi_start());
+    esp_err_t err;
+    if ((err = esp_wifi_set_mode(WIFI_MODE_AP)) != ESP_OK) return err;
+    if ((err = esp_wifi_set_config(WIFI_IF_AP, &wc)) != ESP_OK) return err;
+    if ((err = esp_wifi_start()) != ESP_OK) return err;
     strcpy(s_ip, "192.168.4.1");
     ESP_LOGI(TAG, "provisioning AP 'wearcam-setup' up (192.168.4.1)");
+    return ESP_OK;
 }
 
 void wifi_start(void)
@@ -102,7 +104,7 @@ void wifi_start(void)
     if (load_creds(ssid, sizeof(ssid), pass, sizeof(pass))) {
         if (start_sta(ssid, pass) != ESP_OK) ESP_LOGE(TAG, "STA start failed at boot");
     } else {
-        start_ap();
+        if (start_ap() != ESP_OK) ESP_LOGE(TAG, "provisioning AP failed at boot");
     }
 }
 
@@ -122,7 +124,10 @@ bool wifi_set_credentials(const char *ssid, const char *pass)
     esp_wifi_stop();
     s_retry = 0;
     if (start_sta(ssid, pass) != ESP_OK) {
-        ESP_LOGE(TAG, "STA restart failed applying new creds");
+        ESP_LOGE(TAG, "STA restart failed applying new creds; restoring AP");
+        // Leaving the radio stopped would strand the device until a reboot.
+        // Bring the provisioning AP back so it stays reachable for a retry.
+        if (start_ap() != ESP_OK) ESP_LOGE(TAG, "AP fallback failed; radio down");
         return false;
     }
     return true;

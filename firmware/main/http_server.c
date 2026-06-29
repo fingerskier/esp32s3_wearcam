@@ -192,6 +192,7 @@ void http_start(ring_buffer_t *rb)
     cfg.max_uri_handlers = 16;
     cfg.lru_purge_enable = true;
     cfg.stack_size = 8192;
+    cfg.max_open_sockets = 5;   // +listen +ctrl = 7 of the 16-socket LWIP pool
     httpd_handle_t srv = NULL;
     if (httpd_start(&srv, &cfg) != ESP_OK) { ESP_LOGE(TAG, "httpd start failed"); return; }
     reg(srv, "/",          HTTP_GET,  h_index);
@@ -214,6 +215,7 @@ void http_start(ring_buffer_t *rb)
     scfg.ctrl_port   = cfg.ctrl_port + 1;   // must differ from the main server
     scfg.lru_purge_enable = true;
     scfg.stack_size  = 8192;
+    scfg.max_open_sockets = 3;   // +listen +ctrl = 5; 7+5 = 12 of 16, 4 spare
     httpd_handle_t stream_srv = NULL;
     if (httpd_start(&stream_srv, &scfg) == ESP_OK) {
         reg(stream_srv, "/stream", HTTP_GET, h_stream);

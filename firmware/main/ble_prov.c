@@ -10,7 +10,7 @@
 #include "services/gatt/ble_svc_gatt.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "freertos/semphr.h"
+#include "freertos/event_groups.h"
 #include <string.h>
 
 static const char *TAG = "ble";
@@ -20,7 +20,13 @@ static uint16_t s_stat_attr;
 
 static char s_ssid[33];
 static char s_pass[65];
-static SemaphoreHandle_t s_apply_sem;   // signals the worker to apply creds
+// The worker task owns every Wi-Fi mode switch AND every STATUS notify, so both
+// run on its 4096-byte stack rather than the NimBLE host task or the ~2.3 KB
+// system event task. APPLY_BIT = apply creds then notify; NOTIFY_BIT = just
+// notify (e.g. STA got an IP).
+static EventGroupHandle_t s_evt;
+#define APPLY_BIT  BIT0
+#define NOTIFY_BIT BIT1
 
 // 128-bit base: 0000fe4N-cc7a-482a-984a-7f2ed5b3e58f
 // BLE_UUID128_INIT takes the 16 bytes least-significant-byte first (NimBLE
@@ -67,7 +73,7 @@ static int chr_access(uint16_t ch, uint16_t attr, struct ble_gatt_access_ctxt *c
             // Defer the Wi-Fi mode switch to a worker task: running it here
             // would block the NimBLE host task, delay the ATT response, and
             // could abort from inside the GATT callback on a transient error.
-            if (s_apply_sem) xSemaphoreGive(s_apply_sem);
+            if (s_evt) xEventGroupSetBits(s_evt, APPLY_BIT);
         } else if (ble_uuid_cmp(u, &UUID_CMD.u) == 0) {
             ESP_LOGI(TAG, "cmd: %s", buf);   // start/stop/snapshot hooks
         }
@@ -142,25 +148,32 @@ static void on_sync(void)
 
 static void host_task(void *param) { nimble_port_run(); nimble_port_freertos_deinit(); }
 
-// Applies WiFi credentials off the NimBLE host task (see APPLY handler).
+// Runs Wi-Fi applies and STATUS notifies off the NimBLE host / system event
+// tasks (see APPLY handler and on_got_ip). notify_status() touches the NimBLE
+// stack, so it belongs on this 4096-byte stack, not the ~2.3 KB event task.
 static void wifi_apply_worker(void *arg)
 {
     (void)arg;
     for (;;) {
-        xSemaphoreTake(s_apply_sem, portMAX_DELAY);
-        if (!wifi_set_credentials(s_ssid, s_pass)) {
-            ESP_LOGW(TAG, "wifi_set_credentials failed");
+        EventBits_t bits = xEventGroupWaitBits(s_evt, APPLY_BIT | NOTIFY_BIT,
+                                               pdTRUE, pdFALSE, portMAX_DELAY);
+        if (bits & APPLY_BIT) {
+            if (!wifi_set_credentials(s_ssid, s_pass)) {
+                ESP_LOGW(TAG, "wifi_set_credentials failed");
+            }
         }
-        notify_status();   // report setup/connecting state promptly
+        notify_status();   // report setup/connecting/connected state promptly
     }
 }
 
-// Fired from the WiFi event task when the STA gets an IP: push it to the app.
-static void on_got_ip(void) { notify_status(); }
+// Fired from the WiFi event task when the STA gets an IP: hand off to the
+// worker so the notify runs on its larger stack, not the event task's.
+static void on_got_ip(void) { if (s_evt) xEventGroupSetBits(s_evt, NOTIFY_BIT); }
 
 void ble_prov_start(void)
 {
-    s_apply_sem = xSemaphoreCreateBinary();
+    s_evt = xEventGroupCreate();
+    if (!s_evt) { ESP_LOGE(TAG, "event group alloc failed; provisioning disabled"); return; }
     xTaskCreate(wifi_apply_worker, "wifi_apply", 4096, NULL, 5, NULL);
     wifi_set_ip_cb(on_got_ip);
     nimble_port_init();
