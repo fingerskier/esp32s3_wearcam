@@ -17,3 +17,9 @@ input, select { background:#0c0f16; color:var(--fg); border:1px solid #2a3140; b
 .status { background:#0c0f16; padding:.75rem; border-radius:6px; font-size:.75rem; white-space:pre-wrap; }
 .hint { font-size:.8rem; opacity:.7; }
 a { color:var(--accent); }
+.tabs { display:flex; gap:.25rem; margin-left:.5rem; }
+.tab { background:transparent; border:none; border-bottom:2px solid transparent; border-radius:0; padding:.35rem .6rem; font:inherit; color:var(--fg); opacity:.7; }
+.tab[aria-selected="true"] { opacity:1; border-bottom-color:var(--accent); }
+.tab:hover { opacity:1; }
+.notice { background:#0c0f16; border:1px solid #2a3140; border-left:3px solid var(--accent); padding:.6rem .75rem; border-radius:6px; font-size:.85rem; }
+.open-form { display:flex; gap:.5rem; align-items:end; margin-top:.75rem; flex-wrap:wrap; }
