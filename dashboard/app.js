@@ -5,14 +5,26 @@ const C_PASS  = '0000fe42-cc7a-482a-984a-7f2ed5b3e58f';
 const C_APPLY = '0000fe43-cc7a-482a-984a-7f2ed5b3e58f';
 const C_STAT  = '0000fe44-cc7a-482a-984a-7f2ed5b3e58f';
 
+// ---------- Pure helpers (unit-tested in app.test.js; no DOM access) ----------
+function detectCaps({ hostname, protocol, isSecureContext, hasBluetooth }) {
+  const onDevice = !hostname.endsWith('github.io') && protocol.startsWith('http');
+  return { onDevice, canStream: onDevice, canBle: !!hasBluetooth && !!isSecureContext };
+}
+function defaultTab(caps) { return caps.onDevice ? 'live' : 'setup'; }
+function extractIp(text) {
+  const m = String(text).match(/(\d+\.\d+\.\d+\.\d+)/);
+  return m && m[1] !== '0.0.0.0' ? m[1] : null;
+}
+function deviceUrl(ip) { return `http://${ip}/`; }
+
 const $ = (id) => document.getElementById(id);
 const enc = new TextEncoder();
 // Device serves this file over http(s) from its own origin (not github.io).
-const onDevice = !location.hostname.endsWith('github.io') && location.protocol.startsWith('http');
+function boot() { /* replaced in Task 2 */ }
 
 function setConn(text, ok) { const c = $('conn'); c.textContent = text; c.classList.toggle('ok', !!ok); }
 
-if (onDevice) initLive(); else initBle();
+if (typeof document !== 'undefined') boot();
 
 // ---------- Device (HTTP) mode ----------
 function initLive() {
@@ -88,4 +100,8 @@ function initBle() {
     await chars.apply.writeValue(Uint8Array.of(1));
     $('ble-status').textContent = 'Credentials sent; device joining WiFi…';
   };
+}
+
+if (typeof module !== 'undefined') {
+  module.exports = { detectCaps, defaultTab, extractIp, deviceUrl };
 }
