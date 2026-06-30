@@ -155,10 +155,14 @@ function initBle(caps) {
 
   $('wifi-form').onsubmit = async (e) => {
     e.preventDefault();
-    await chars.ssid.writeValue(enc.encode($('ssid').value));
-    await chars.pass.writeValue(enc.encode($('pass').value));
-    await chars.apply.writeValue(Uint8Array.of(1));
-    $('ble-status').textContent = 'Credentials sent; device joining WiFi…';
+    try {
+      await chars.ssid.writeValue(enc.encode($('ssid').value));
+      await chars.pass.writeValue(enc.encode($('pass').value));
+      await chars.apply.writeValue(Uint8Array.of(1));
+      $('ble-status').textContent = 'Credentials sent; device joining WiFi…';
+    } catch (err) {
+      $('ble-status').textContent = 'Send failed: ' + err.message;
+    }
   };
 }
 
