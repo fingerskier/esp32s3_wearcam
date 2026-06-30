@@ -100,6 +100,15 @@ void wifi_start(void)
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, on_event, NULL, NULL));
     ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, on_event, NULL, NULL));
 
+    // Disable WiFi modem-sleep. The default (WIFI_PS_MIN_MODEM) lets the radio
+    // sleep between DTIM beacons, so the device intermittently misses ARP and
+    // unicast frames -- it falls out of clients' ARP caches and becomes
+    // unreachable in bursts (observed: device ~100% ping loss while the gateway
+    // held 0%). A wearable whose whole job is serving live MJPEG must stay
+    // reachable, so we keep the radio awake. (Battery tradeoff: ~+80 mA; a
+    // future enhancement could drop to MIN_MODEM only while no client streams.)
+    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
+
     char ssid[33] = {0}, pass[65] = {0};
     if (load_creds(ssid, sizeof(ssid), pass, sizeof(pass))) {
         if (start_sta(ssid, pass) != ESP_OK) ESP_LOGE(TAG, "STA start failed at boot");
