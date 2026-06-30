@@ -1,6 +1,8 @@
 # esp32s3_wearcam
 Firmware for a wearable camera
 
+[The App](https://fingerskier.github.io/esp32s3_wearcam/)
+
 ## Versions
 1. Seeed Studio XIAO ESP32S3 Sense
 
