@@ -141,6 +141,8 @@ function initBle(caps) {
         const ip = extractIp(txt);
         if (ip) {
           lsSet(LS_IP, ip);
+          const ipField = $('device-ip');
+          if (ipField) ipField.value = ip; // reflect on the Live tab within this session
           const a = $('open-device');
           a.hidden = false; a.href = deviceUrl(ip);
           a.textContent = `Open device dashboard (${deviceUrl(ip)}) →`;
